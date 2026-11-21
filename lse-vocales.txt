@@ -60,7 +60,7 @@ label.chk{font-size:.85rem;color:var(--mut);display:inline-flex;gap:6px;align-it
       <button class="start" id="go" style="margin-top:10px">Activar cámara</button>
       <div class="status" id="status"><b class="big">Esperando…</b>Activa la cámara y elige una vocal.</div>
       <div class="det">Detecto: <span class="L" id="L">–</span><span id="hand"></span></div>
-      <label class="chk"><input type="checkbox" id="dbg"> Mostrar valores de diagnóstico</label>
+      <label class="chk"><input type="checkbox" id="diagchk"> Mostrar valores de diagnóstico</label>
       <div class="diag" id="diag" style="display:none"></div>
     </div>
 
@@ -223,7 +223,7 @@ function handle(r) {
   let stable = ""; for (const [k, n] of Object.entries(cnt)) if (k && n >= 8) stable = k;
   $("L").textContent = stable || "?";
 
-  if ($("dbg").checked) {
+  if ($("diagchk").checked) {
     $("diag").style.display = "";
     $("diag").textContent = ["idx","mid","ring","pin"].map(k => k + " " + f[k].toFixed(2)).join("  ") + "\nthumb " + f.thumb.toFixed(2) + "  pinch " + f.pinch.toFixed(2) + "  gapIM " + f.gapIM.toFixed(2) + "\nUmbrales: extendido ≥ " + EXT + ", recogido < " + CUR + ", pulgar separado ≥ " + THUMB;
   } else $("diag").style.display = "none";
