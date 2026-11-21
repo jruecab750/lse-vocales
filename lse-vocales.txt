@@ -13,6 +13,7 @@ h1{font-size:1.35rem;margin:4px 0 2px}
 .sub{color:var(--mut);margin:0 0 12px;font-size:.95rem}
 .grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px}
 @media(max-width:820px){.grid{grid-template-columns:1fr}}
+@media(max-width:560px){.wrap{padding:8px}h1{font-size:1.1rem}.sub{font-size:.85rem}.ref img{width:110px}.ref .t{min-height:0}.cam{height:min(40vh,320px)}.status{height:132px;font-size:.9rem}.status b.big{font-size:1.05rem}.keys{gap:5px}.key{border-radius:12px}}
 .card{background:var(--card);border-radius:14px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
 .cam{position:relative;height:min(46vh,420px);width:100%;background:#111;border-radius:12px;overflow:hidden}
 .cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
@@ -40,8 +41,11 @@ h1{font-size:1.35rem;margin:4px 0 2px}
 .ref .t p{margin:0 0 6px;font-size:.95rem;line-height:1.35}
 .start{width:100%;padding:12px;font-size:1.05rem;border:0;border-radius:10px;background:var(--pri);color:#fff;font-weight:700;cursor:pointer}
 .start:disabled{opacity:.6;cursor:wait}
-.keys{display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;position:sticky;bottom:0;z-index:50;padding:8px 0;background:linear-gradient(rgba(244,246,251,0),var(--bg) 25%)}
-.key{width:96px;height:96px;font-size:2.4rem;font-weight:800;border-radius:16px;border:3px solid #cbd5e1;background:#fff;color:var(--ink);cursor:pointer;position:relative}
+.keys{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:14px}
+.kcol{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.kpic{width:100%;max-width:96px;border-radius:10px;border:2px solid #e5e7eb;background:#fff;cursor:pointer;display:block}
+.kpic.sel{border-color:var(--pri)}
+.key{width:100%;max-width:96px;aspect-ratio:1;font-size:clamp(1.6rem,6vw,2.4rem);font-weight:800;border-radius:16px;border:3px solid #cbd5e1;background:#fff;color:var(--ink);cursor:pointer;position:relative}
 .key:hover{border-color:var(--pri)}
 .key.sel{border-color:var(--pri);background:#e8eeff}
 .key .tick{position:absolute;top:2px;right:6px;font-size:1.1rem;color:var(--ok);display:none}
@@ -80,11 +84,11 @@ label.chk{font-size:.85rem;color:var(--mut);display:inline-flex;gap:6px;align-it
         <img id="refimg" alt="Dibujo de la vocal en LSE">
         <div class="t"><h2 id="reft">Elige una vocal</h2><p id="refp">Abajo tienes las cinco vocales.</p><span class="palm" id="refpalm"></span></div>
       </div>
+      <div class="keys" id="keys"></div>
       <p class="free">Consejo: buena luz, mano entera visible y a unos 40–60 cm de la cámara. Mantén la postura un segundo.</p>
     </div>
   </div>
 
-  <div class="keys" id="keys"></div>
   <div class="free">Pulsa de nuevo la vocal elegida para el modo libre: el programa te dice qué letra ve en tu mano.</div>
 <div class="hcur" id="hcur"></div>
 
@@ -92,7 +96,7 @@ label.chk{font-size:.85rem;color:var(--mut);display:inline-flex;gap:6px;align-it
     Dibujos del alfabeto dactilológico: © <b>María Nicolás Abellán</b> (<a href="https://historiasdiversas.com" target="_blank" rel="noopener">HistoriasDiversas.com</a>, @marianiabe),
     licencia <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.es" target="_blank" rel="noopener">CC BY-NC-SA</a>.
     Se han recortado las cinco vocales del cartel original. Uso educativo no comercial; las adaptaciones deben compartirse con la misma licencia.<br>
-    Detección de manos: MediaPipe Hand Landmarker (Google).
+    Detección de manos: MediaPipe Hand Landmarker (Google). · <a href="v1.html">Versión anterior</a>
   </div>
 </div>
 
@@ -134,12 +138,15 @@ for (const k of Object.keys(INFO)) {
   const b = document.createElement("button");
   b.className = "key htarget"; b.dataset.k = k; b.innerHTML = k + '<span class="tick">✓</span>';
   b.onclick = () => select(k);
-  keys.appendChild(b);
+  const col = document.createElement("div"); col.className = "kcol";
+  const im = document.createElement("img"); im.className = "kpic htarget"; im.dataset.k = k; im.src = IMG[k]; im.alt = "Vocal " + k + " en LSE";
+  im.onclick = () => select(k);
+  col.appendChild(b); col.appendChild(im); keys.appendChild(col);
 }
 function select(k) {
   target = (target === k) ? null : k;
   okRun = 0; celebrated = false;
-  document.querySelectorAll(".key").forEach(b => b.classList.toggle("sel", b.dataset.k === target));
+  document.querySelectorAll(".key,.kpic").forEach(b => b.classList.toggle("sel", b.dataset.k === target));
   if (target) { $("refimg").src = IMG[target]; $("refimg").style.display = ""; $("reft").textContent = INFO[target].t; $("refp").textContent = INFO[target].p; $("refpalm").textContent = "✋ " + INFO[target].o; $("refpalm").style.display = ""; }
   else { $("refimg").style.display = "none"; $("reft").textContent = "Modo libre"; $("refp").textContent = "Pon la mano y te digo qué vocal veo."; $("refpalm").style.display = "none"; }
   if (!running) setStatus("", "Esperando…", "Activa la cámara para empezar.");
