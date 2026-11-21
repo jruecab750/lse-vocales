@@ -19,6 +19,11 @@ h1{font-size:1.35rem;margin:4px 0 2px}
 .cam .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#cbd5e1;text-align:center;padding:20px;font-size:1rem}
 .frame{position:absolute;inset:0;border:6px solid transparent;border-radius:12px;pointer-events:none;transition:border-color .15s}
 .frame.ok{border-color:var(--ok)}.frame.bad{border-color:var(--bad)}.frame.mid{border-color:var(--warn)}
+.zones{position:absolute;left:0;right:0;bottom:0;height:20%;display:flex;gap:6px;padding:6px;pointer-events:none}
+.zones div{flex:1;display:flex;align-items:center;justify-content:center;font-size:1.8rem;font-weight:800;color:#fff;background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.5);border-radius:10px;position:relative;overflow:hidden}
+.zones div.sel{background:rgba(36,87,214,.65)}
+.zones div i{position:absolute;left:0;bottom:0;height:6px;width:0;background:#ffd34d}
+.ptr{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:4px solid #ffd34d;background:rgba(255,211,77,.35);pointer-events:none;display:none}
 .status{margin-top:10px;padding:12px;border-radius:12px;background:#eef2ff;min-height:84px}
 .status.ok{background:#e3f6ea}.status.bad{background:#fdeaea}.status.mid{background:#fff6dd}
 .status b.big{font-size:1.25rem;display:block;margin-bottom:2px}
@@ -47,7 +52,7 @@ label.chk{font-size:.85rem;color:var(--mut);display:inline-flex;gap:6px;align-it
 <body>
 <div class="wrap">
   <h1>🤟 Practica las vocales en LSE</h1>
-  <p class="sub">Pulsa una vocal, mira cómo se hace y ponte la <b>mano derecha</b> delante de la cámara, con la palma hacia ella y los dedos hacia arriba.</p>
+  <p class="sub">Elige una vocal (con el ratón o <b>señalando con el índice</b> una de las cinco casillas de abajo de la cámara durante 1 segundo), mira cómo se hace y ponte la <b>mano derecha</b> delante de la cámara, con la palma hacia ella y los dedos hacia arriba. Al acertar, pasa sola a la siguiente.</p>
 
   <div class="grid">
     <div class="card">
@@ -56,11 +61,12 @@ label.chk{font-size:.85rem;color:var(--mut);display:inline-flex;gap:6px;align-it
         <video id="v" playsinline muted style="display:none"></video>
         <canvas id="c" style="display:none"></canvas>
         <div class="frame" id="frame"></div>
+        <div class="zones" id="zones"></div><div class="ptr" id="ptr"></div>
       </div>
       <button class="start" id="go" style="margin-top:10px">Activar cámara</button>
       <div class="status" id="status"><b class="big">Esperando…</b>Activa la cámara y elige una vocal.</div>
       <div class="det">Detecto: <span class="L" id="L">–</span><span id="hand"></span></div>
-      <label class="chk"><input type="checkbox" id="diagchk"> Mostrar valores de diagnóstico</label>
+      <label class="chk"><input type="checkbox" id="diagchk" checked> Mostrar valores de diagnóstico</label>
       <div class="diag" id="diag" style="display:none"></div>
     </div>
 
@@ -98,7 +104,7 @@ const INFO = {
 const $ = id => document.getElementById(id);
 let target = null, landmarker = null, running = false, lastTs = -1;
 const hist = [], done = new Set();
-let okRun = 0, celebrated = false;
+let okRun = 0, celebrated = false, dwellK = null, dwellT = 0;
 
 // ---- teclas ----
 const keys = $("keys");
@@ -112,10 +118,13 @@ function select(k) {
   target = (target === k) ? null : k;
   okRun = 0; celebrated = false;
   document.querySelectorAll(".key").forEach(b => b.classList.toggle("sel", b.dataset.k === target));
+  document.querySelectorAll("#zones div").forEach(z => z.classList.toggle("sel", z.dataset.k === target));
   if (target) { $("refimg").src = IMG[target]; $("refimg").style.display = ""; $("reft").textContent = INFO[target].t; $("refp").textContent = INFO[target].p; }
   else { $("refimg").style.display = "none"; $("reft").textContent = "Modo libre"; $("refp").textContent = "Pon la mano y te digo qué vocal veo."; }
   if (!running) setStatus("", "Esperando…", "Activa la cámara para empezar.");
 }
+const zones = $("zones");
+for (const k of Object.keys(INFO)) { const z = document.createElement("div"); z.dataset.k = k; z.innerHTML = k + "<i></i>"; zones.appendChild(z); }
 select("A");
 
 // ---- geometría ----
@@ -124,12 +133,12 @@ const FINGERS = {idx:[5,8], mid:[9,12], ring:[13,16], pin:[17,20]};
 function feats(lm) {
   const w = lm[0], palm = d(lm[0], lm[9]) || 1e-6, f = {};
   for (const [n, [m, t]] of Object.entries(FINGERS)) f[n] = d(lm[t], w) / d(lm[m], w);
-  f.thumb = d(lm[4], lm[5]) / palm;      // pulgar separado
+  f.thumb = d(lm[4], lm[6]) / palm;      // pulgar lejos del lateral del índice (separado)
   f.pinch = d(lm[4], lm[8]) / palm;      // pulgar-índice
   f.gapIM = d(lm[8], lm[12]) / palm;     // separación índice-corazón
   return f;
 }
-const EXT = 1.55, CUR = 1.30, HOOK = 1.60, THUMB = 0.85;
+const EXT = 1.55, CUR = 1.45, HOOK = 1.70, THUMB = 0.70;
 // cada vocal: lista de condiciones {ok, msg}
 const RULES = {
   A: f => [
@@ -211,21 +220,38 @@ function handle(r) {
     return;
   }
   const lm = r.landmarks[0];
-  // La imagen no está espejada: «Left» para MediaPipe = mano derecha real de la persona.
-  const lab = r.handedness && r.handedness[0] && r.handedness[0][0] ? r.handedness[0][0].categoryName : "";
-  const isRight = lab === "Left";
-  $("hand").textContent = lab ? (isRight ? "· mano derecha ✔" : "· parece la mano izquierda (usa la derecha)") : "";
+  $("hand").textContent = "";
   const f = feats(lm), res = evalAll(f);
+  // Gesto de señalar (índice estirado, resto recogido): no es ninguna vocal; sirve para elegir letra
+  const pointing = f.idx >= EXT && f.mid < CUR && f.ring < CUR && f.pin < CUR;
+  const px = 1 - lm[8].x, py = lm[8].y, ptr = $("ptr");
+  let overK = null;
+  if (pointing) {
+    ptr.style.display = "block"; ptr.style.left = (px * 100) + "%"; ptr.style.top = (py * 100) + "%";
+    if (py > 0.78) overK = Object.keys(INFO)[Math.min(4, Math.max(0, Math.floor(px * 5)))];
+  } else ptr.style.display = "none";
+  const now = performance.now();
+  if (overK && overK === dwellK) {
+    const pr = Math.min(1, (now - dwellT) / 1000);
+    document.querySelectorAll("#zones div").forEach(z => z.querySelector("i").style.width = (z.dataset.k === overK ? pr * 100 : 0) + "%");
+    if (pr >= 1) { select(overK); dwellK = null; }
+  } else { dwellK = overK; dwellT = now; document.querySelectorAll("#zones div i").forEach(i => i.style.width = "0"); }
+  if (pointing) {
+    draw(lm, "#ffd34d"); hist.length = 0; okRun = 0;
+    $("L").textContent = "☝";
+    setStatus("mid", "Estás señalando", "Lleva la punta del índice a una casilla de abajo de la cámara y mantén 1 segundo para elegir esa vocal.");
+    return;
+  }
   const matches = Object.keys(res).filter(k => res[k].all);
   const cur = matches.length === 1 ? matches[0] : (matches.length > 1 ? (target && matches.includes(target) ? target : matches[0]) : "");
-  hist.push(cur); if (hist.length > 12) hist.shift();
+  hist.push(cur); if (hist.length > 8) hist.shift();
   const cnt = {}; hist.forEach(x => cnt[x] = (cnt[x] || 0) + 1);
-  let stable = ""; for (const [k, n] of Object.entries(cnt)) if (k && n >= 8) stable = k;
+  let stable = ""; for (const [k, n] of Object.entries(cnt)) if (k && n >= 6) stable = k;
   $("L").textContent = stable || "?";
 
   if ($("diagchk").checked) {
     $("diag").style.display = "";
-    $("diag").textContent = ["idx","mid","ring","pin"].map(k => k + " " + f[k].toFixed(2)).join("  ") + "\nthumb " + f.thumb.toFixed(2) + "  pinch " + f.pinch.toFixed(2) + "  gapIM " + f.gapIM.toFixed(2) + "\nUmbrales: extendido ≥ " + EXT + ", recogido < " + CUR + ", pulgar separado ≥ " + THUMB;
+    $("diag").textContent = ["idx","mid","ring","pin"].map(k => k + " " + f[k].toFixed(2)).join("  ") + "\npulgar-lateral " + f.thumb.toFixed(2) + "  pinch " + f.pinch.toFixed(2) + "  gapIM " + f.gapIM.toFixed(2) + "\nUmbrales: extendido ≥ " + EXT + ", recogido < " + CUR + ", pulgar separado ≥ " + THUMB;
   } else $("diag").style.display = "none";
 
   if (!target) {
@@ -241,6 +267,9 @@ function handle(r) {
     if (okRun >= 10 && !celebrated) {
       celebrated = true; done.add(target);
       document.querySelector('.key[data-k="' + target + '"]').classList.add("done");
+      const order = Object.keys(INFO), nxt = order[(order.indexOf(target) + 1) % 5];
+      if (done.size >= 5) setStatus("ok", "🎉 ¡Las cinco vocales hechas!", "Muy bien. Puedes repetir la que quieras.");
+      else setTimeout(() => { if (target) select(nxt); }, 1600);
     }
   } else {
     okRun = 0; draw(lm, stable && stable !== target ? "#d64545" : "#e0a21b");
